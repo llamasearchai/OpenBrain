@@ -3,20 +3,31 @@ from __future__ import annotations
 from typing import Dict, Any
 from pydantic import BaseModel
 from fastapi import HTTPException
+import os
 
 from openai import OpenAI
-from .config import settings
+from .config import Settings
 
 
 class PlanRequest(BaseModel):
     goal: str
 
 
-def plan_digital_twin(goal: str) -> Dict[str, Any]:
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured")
+def _looks_like_openai_key(value: str | None) -> bool:
+    if not value:
+        return False
+    # Basic heuristic to avoid leaking calls in tests/CI
+    return value.startswith("sk-") and len(value) > 20
 
-    client = OpenAI(api_key=settings.openai_api_key)
+
+def plan_digital_twin(goal: str) -> Dict[str, Any]:
+    # Re-evaluate settings at call time to honor monkeypatched env in tests
+    cfg = Settings()
+    api_key = cfg.openai_api_key or os.getenv("OPENAI_API_KEY")
+    if not _looks_like_openai_key(api_key):
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured or invalid format")
+
+    client = OpenAI(api_key=api_key)
 
     system = (
         "You are a senior full-stack engineer building a digital twin of a human brain."
