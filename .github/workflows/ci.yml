@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r backend/requirements.txt
-      - run: pytest -q
+      - run: pytest -q backend/tests
   web:
     runs-on: ubuntu-latest
     steps:
@@ -24,5 +24,6 @@ jobs:
       - run: |
           cd web
           npm ci
+          npm test --silent
           npm run build
 
