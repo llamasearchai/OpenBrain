@@ -7,7 +7,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import { BRAIN_REGIONS } from '../data/brainRegions'
 import { meshNameToRegionId } from '../data/meshRegionMap'
-import { NeuralActivitySimulator } from '../services/neuralSimulation'
 import type { NeuralActivity } from '../services/neuralSimulation'
 import { VisualizationModeManager } from '../services/visualizationModes'
 import type { VisualizationMode } from '../services/visualizationModes'
@@ -16,8 +15,6 @@ import { BrainConnectivity } from './BrainConnectivity'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 
-// Create a global simulator instance
-const neuralSimulator = new NeuralActivitySimulator();
 const visualizationManager = new VisualizationModeManager();
 
 function Loader() {
@@ -46,10 +43,6 @@ function BrainModel(props: {
         props.onModelReady?.(false)
       }
     )
-
-    // Start the neural simulation
-    neuralSimulator.start(1.0)
-    return () => neuralSimulator.stop()
   }, [])
 
   // Update material based on visualization mode and activity
@@ -142,11 +135,10 @@ function RegionHighlight({ regionId }: { regionId: string | null }) {
   )
 }
 
-function BrainWaves() {
+function BrainWaves({ activity }: { activity?: NeuralActivity | null }) {
   const meshRef = useRef<THREE.Mesh>(null)
   
   useFrame(() => {
-    const activity = neuralSimulator.getLatestActivity()
     if (activity && meshRef.current) {
       // Animate based on brain wave activity
       const scale = 1 + (activity.brainWaves.alpha * 0.5)
@@ -193,13 +185,15 @@ interface BrainSceneProps {
   onRegionClick?: (regionId: string) => void;
   selectedRegion?: string | null;
   visualizationMode?: VisualizationMode;
+  onStimulateRegion?: (regionId: string) => void;
 }
 
 export function BrainScene({
   activity,
   onRegionClick,
   selectedRegion,
-  visualizationMode = 'structural'
+  visualizationMode = 'structural',
+  onStimulateRegion,
 }: BrainSceneProps) {
   const [showLabels, setShowLabels] = useLocalStorage<boolean>('ob.showLabels', true)
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null)
@@ -247,7 +241,7 @@ export function BrainScene({
         </Physics>
         
         <RegionHighlight regionId={(selectedRegion || hoveredRegion || pinnedRegion) ?? null} />
-        <RegionTooltip regionId={hoveredRegion ?? pinnedRegion} />
+        <RegionTooltip regionId={hoveredRegion ?? pinnedRegion} activity={activity} />
         {!hasGltf && (
           <RegionProxies
             onHover={setHoveredRegion}
@@ -272,6 +266,7 @@ export function BrainScene({
             setPinnedRegion(id)
             onRegionClick?.(id)
           }}
+          onStimulate={() => pinnedRegion && onStimulateRegion?.(pinnedRegion)}
         />
         
         {activity && (
@@ -285,7 +280,7 @@ export function BrainScene({
           </group>
         )}
         
-        <BrainWaves />
+        <BrainWaves activity={activity} />
         {showLabels && <RegionLabels />}
         
         <Environment preset="studio" />
@@ -355,12 +350,11 @@ function RegionProxies({
   )
 }
 
-function RegionTooltip({ regionId }: { regionId: string | null }) {
+function RegionTooltip({ regionId, activity }: { regionId: string | null, activity?: NeuralActivity | null }) {
   if (!regionId) return null
   const region = BRAIN_REGIONS.find(r => r.id === regionId)
   if (!region) return null
-  const latest = neuralSimulator.getLatestActivity()
-  const rAct = latest?.regions?.[region.id]
+  const rAct = activity?.regions?.[region.id]
   return (
     <Html
       position={region.position as [number, number, number]}
@@ -412,6 +406,7 @@ function OverlayUI({
   onUnpin,
   onResetView,
   onSelectRegion,
+  onStimulate,
 }: {
   autoRotate: boolean
   onToggleAutoRotate: (v: boolean) => void
@@ -423,6 +418,7 @@ function OverlayUI({
   onUnpin: () => void
   onResetView: () => void
   onSelectRegion: (id: string) => void
+  onStimulate: () => void
 }) {
   const pinned = pinnedRegion ? BRAIN_REGIONS.find((r) => r.id === pinnedRegion) : null
   const [query, setQuery] = useState('')
@@ -533,7 +529,7 @@ function OverlayUI({
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
-                onClick={() => neuralSimulator.stimulateRegion(pinned.id, 0.2)}
+                onClick={onStimulate}
                 style={{ padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.08)', color: 'white', cursor: 'pointer' }}
               >
                 Stimulate

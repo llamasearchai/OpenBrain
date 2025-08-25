@@ -115,6 +115,7 @@ function App() {
             onRegionClick={handleRegionSelect}
             selectedRegion={selectedRegion}
             visualizationMode={visualizationMode}
+            onStimulateRegion={(id) => neuralSimulator.stimulateRegion(id, 0.2)}
           />
         </div>
 
