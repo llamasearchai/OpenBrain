@@ -9,6 +9,7 @@ import type { VisualizationMode } from './services/visualizationModes'
 import { Legend } from './components/Legend'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import React from 'react'
+import { ensurePrefsMigrated } from './services/prefs'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }>{
   constructor(props: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ function App() {
   const [wsData, setWsData] = useState<BrainWsPayload | null>(null)
 
   useEffect(() => {
+    ensurePrefsMigrated()
     // Start the neural simulator
     neuralSimulator.start(1.0)
     
@@ -148,6 +150,7 @@ function App() {
           <select
             value={visualizationMode}
             onChange={(e) => setVisualizationMode(e.target.value as VisualizationMode)}
+            aria-label="Visualization mode"
           >
             <option value="structural">Structural MRI</option>
             <option value="fmri">Functional MRI</option>
@@ -158,11 +161,11 @@ function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="ob-muted">Neural Simulation: {activity ? 'Active' : 'Initializing...'}</div>
-          <div style={{ display: 'flex', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--ob-card-border)', padding: 4, borderRadius: 10 }}>
-            <button onClick={() => setActivePanel('metrics')} style={{ background: activePanel==='metrics' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Metrics</button>
-            <button onClick={() => setActivePanel('legend')} style={{ background: activePanel==='legend' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Legend</button>
+          <div role="tablist" aria-label="Side panel" style={{ display: 'flex', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--ob-card-border)', padding: 4, borderRadius: 10 }}>
+            <button role="tab" aria-selected={activePanel==='metrics'} onClick={() => setActivePanel('metrics')} style={{ background: activePanel==='metrics' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Metrics</button>
+            <button role="tab" aria-selected={activePanel==='legend'} onClick={() => setActivePanel('legend')} style={{ background: activePanel==='legend' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Legend</button>
           </div>
-          <div className="ob-badge" style={{ background: wsLive ? 'rgba(0,200,120,0.25)' : 'rgba(255,255,255,0.08)' }}>
+          <div className="ob-badge" aria-label={`WebSocket status ${wsLive ? 'Live' : 'Sim'}`} style={{ background: wsLive ? 'rgba(0,200,120,0.25)' : 'rgba(255,255,255,0.08)' }}>
             WS: {wsLive ? 'Live' : 'Sim'}
           </div>
         </div>

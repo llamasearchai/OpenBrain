@@ -135,7 +135,7 @@ function BrainModel(props: {
       </mesh>
       {gltfError && (
         <Html center distanceFactor={4} transform>
-          <div style={{ background: 'rgba(0,0,0,0.7)', color: 'white', padding: 10, borderRadius: 8, border: '1px solid #555' }}>
+          <div role="alert" style={{ background: 'rgba(0,0,0,0.7)', color: 'white', padding: 10, borderRadius: 8, border: '1px solid #555' }}>
             <div style={{ marginBottom: 8 }}>{gltfError}</div>
             <button onClick={() => {
               // trigger reload by re-running loader effect via temp state change
@@ -146,7 +146,7 @@ function BrainModel(props: {
                 undefined,
                 (err) => { console.warn('Retry failed:', err); setGltfError('Retry failed. Check assets and try again.') }
               )
-            }}>Retry Load</button>
+            }} aria-label="Retry loading brain model">Retry Load</button>
           </div>
         </Html>
       )}
@@ -292,7 +292,7 @@ export function BrainScene({
         </Physics>
         
         <RegionHighlight regionId={(selectedRegion || hoveredRegion || pinnedRegion) ?? null} />
-        <RegionTooltip regionId={hoveredRegion ?? pinnedRegion} activity={activity} />
+        <RegionTooltip regionId={selectedRegion || hoveredRegion || pinnedRegion} activity={activity} />
         {!hasGltf && (
           <RegionProxies
             onHover={setHoveredRegion}
@@ -502,17 +502,21 @@ function OverlayUI({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>
           <strong>View Controls</strong>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label htmlFor="ob-auto-rotate" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
+              id="ob-auto-rotate"
               type="checkbox"
+              aria-label="Auto rotate"
               checked={autoRotate}
               onChange={(e) => onToggleAutoRotate(e.target.checked)}
             />
             Auto-rotate
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label htmlFor="ob-show-labels" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
+              id="ob-show-labels"
               type="checkbox"
+              aria-label="Toggle labels"
               checked={showLabels}
               onChange={(e) => onToggleLabels(e.target.checked)}
             />
@@ -529,6 +533,7 @@ function OverlayUI({
             value={autoRotateSpeed}
             onChange={(e) => onChangeSpeed(parseFloat(e.target.value))}
             style={{ width: 160 }}
+            aria-label="Rotate speed"
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
@@ -541,6 +546,7 @@ function OverlayUI({
             value={focusDuration}
             onChange={(e) => onChangeFocusDuration(parseFloat(e.target.value))}
             style={{ width: 160 }}
+            aria-label="Camera focus duration"
           />
         </div>
         <div style={{ marginTop: 10 }}>
@@ -565,9 +571,11 @@ function OverlayUI({
               color: 'white',
               outline: 'none'
             }}
+            aria-label="Search brain region"
+            aria-controls="ob-search-results"
           />
           {results.length > 0 && (
-            <div style={{
+            <div id="ob-search-results" role="listbox" aria-label="Search results" style={{
               marginTop: 6,
               background: 'rgba(0,0,0,0.5)',
               border: '1px solid rgba(255,255,255,0.15)',
@@ -578,6 +586,8 @@ function OverlayUI({
                 <div
                   key={r.id}
                   onClick={() => { setQuery(''); onSelectRegion(r.id) }}
+                  role="option"
+                  aria-selected={idx === highlightIdx}
                   style={{ padding: '6px 8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', background: idx===highlightIdx? 'rgba(255,255,255,0.08)': 'transparent' }}
                 >
                   <span>{r.name}</span>
@@ -591,6 +601,7 @@ function OverlayUI({
           <button
             onClick={onResetView}
             style={{ padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
+            aria-label="Reset camera view"
           >
             Reset View
           </button>
@@ -602,9 +613,13 @@ function OverlayUI({
                 localStorage.removeItem('ob.autoRotate')
                 localStorage.removeItem('ob.autoRotateSpeed')
                 localStorage.removeItem('ob.focusDuration')
+                localStorage.removeItem('ob.selectedRegion')
+                localStorage.removeItem('ob.vizMode')
+                localStorage.removeItem('ob.activePanel')
               } catch {}
             }}
             style={{ marginLeft: 8, padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
+            aria-label="Reset preferences"
           >
             Reset Prefs
           </button>
