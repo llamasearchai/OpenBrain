@@ -30,16 +30,41 @@ function BrainModel(props: {
   // Replace useLoader with manual loader and a safe fallback when the external .bin is missing
   const [gltf, setGltf] = useState<GLTF | null>(null)
   const meshRef = useRef<THREE.Mesh>(null)
+  const [gltfError, setGltfError] = useState<string | null>(null)
+  const hoverRaf = useRef<number | null>(null)
 
   useEffect(() => {
     const loader = new GLTFLoader()
     loader.load(
       '/models/human_brain/Human_Brain.gltf',
-      (loaded) => { setGltf(loaded as unknown as GLTF); props.onModelReady?.(true) },
+      (loaded) => {
+        const gl = loaded as unknown as GLTF
+        // Collect mesh/node names for mapping diagnostics
+        const names = new Set<string>()
+        gl.scene.traverse((obj: any) => {
+          if (obj && obj.name) names.add(String(obj.name))
+        })
+        const map: Record<string, string> = {}
+        const unmapped: string[] = []
+        names.forEach((n) => {
+          const id = meshNameToRegionId(n)
+          if (id) map[n] = id
+          else unmapped.push(n)
+        })
+        // Helpful dev logs
+        if (Object.keys(map).length) console.table(map)
+        if (unmapped.length) console.warn('Unmapped GLTF nodes:', unmapped.slice(0, 10), `(+${Math.max(0, unmapped.length - 10)} more)`) 
+        else console.info('Unmapped meshes: N=0')
+
+        setGltf(gl)
+        setGltfError(null)
+        props.onModelReady?.(true)
+      },
       undefined,
       (err) => {
         console.warn('GLTF load failed, using placeholder geometry:', err)
         setGltf(null)
+        setGltfError('Failed to load brain model.')
         props.onModelReady?.(false)
       }
     )
@@ -59,15 +84,20 @@ function BrainModel(props: {
     // Fallback: nearest region center to the intersection point
     const p = e?.point as THREE.Vector3 | undefined
     if (!p) return null
-    let best: { id: string; d2: number } | null = null
+    let best: { id: string; d2: number; threshold2: number } | null = null
     for (const r of BRAIN_REGIONS) {
       const dx = p.x - r.position[0]
       const dy = p.y - r.position[1]
       const dz = p.z - r.position[2]
       const d2 = dx * dx + dy * dy + dz * dz
-      if (!best || d2 < best.d2) best = { id: r.id, d2 }
+      // derive a region-specific radius: half the mean size
+      const mean = (r.size[0] + r.size[1] + r.size[2]) / 3
+      const radius = Math.max(0.5, mean * 0.5)
+      const threshold2 = radius * radius
+      if (!best || d2 < best.d2) best = { id: r.id, d2, threshold2 }
     }
-    return best?.id ?? null
+    if (!best) return null
+    return best.d2 <= best.threshold2 ? best.id : null
   }
 
   // If GLTF is available, render it; otherwise render a lightweight placeholder
@@ -77,8 +107,11 @@ function BrainModel(props: {
         object={gltf.scene}
         scale={0.01}
         onPointerMove={(e) => {
-          const id = pickRegionIdFromEvent(e)
-          props.onHoverRegion?.(id)
+          if (hoverRaf.current) cancelAnimationFrame(hoverRaf.current)
+          hoverRaf.current = requestAnimationFrame(() => {
+            const id = pickRegionIdFromEvent(e)
+            props.onHoverRegion?.(id)
+          })
         }}
         onPointerOver={(e) => {
           const id = pickRegionIdFromEvent(e)
@@ -97,9 +130,26 @@ function BrainModel(props: {
   return (
     <group>
       <mesh ref={meshRef} position={[0, 0, 0]}>
-        <sphereGeometry args={[2.8, 32, 32]} />
+        <sphereGeometry args={[2.8, 24, 24]} />
         <meshStandardMaterial color="#888" transparent opacity={0.2} wireframe />
       </mesh>
+      {gltfError && (
+        <Html center distanceFactor={4} transform>
+          <div style={{ background: 'rgba(0,0,0,0.7)', color: 'white', padding: 10, borderRadius: 8, border: '1px solid #555' }}>
+            <div style={{ marginBottom: 8 }}>{gltfError}</div>
+            <button onClick={() => {
+              // trigger reload by re-running loader effect via temp state change
+              setGltfError(null)
+              const loader = new GLTFLoader()
+              loader.load('/models/human_brain/Human_Brain.gltf',
+                (loaded) => { setGltf(loaded as unknown as GLTF); props.onModelReady?.(true) },
+                undefined,
+                (err) => { console.warn('Retry failed:', err); setGltfError('Retry failed. Check assets and try again.') }
+              )
+            }}>Retry Load</button>
+          </div>
+        </Html>
+      )}
     </group>
   )
 }
@@ -200,6 +250,7 @@ export function BrainScene({
   const [pinnedRegion, setPinnedRegion] = useLocalStorage<string | null>('ob.pinnedRegion', null)
   const [autoRotate, setAutoRotate] = useLocalStorage<boolean>('ob.autoRotate', true)
   const [autoRotateSpeed, setAutoRotateSpeed] = useLocalStorage<number>('ob.autoRotateSpeed', -0.2) // negative = clockwise
+  const [focusDuration, setFocusDuration] = useLocalStorage<number>('ob.focusDuration', 1.5)
   const controlsRef = useRef<any>(null)
   const [resetKey, setResetKey] = useState(0)
   const [hasGltf, setHasGltf] = useState(false)
@@ -259,6 +310,8 @@ export function BrainScene({
           onChangeSpeed={(v) => setAutoRotateSpeed(v)}
           showLabels={showLabels}
           onToggleLabels={(v) => setShowLabels(v)}
+          focusDuration={focusDuration}
+          onChangeFocusDuration={(v) => setFocusDuration(v)}
           pinnedRegion={pinnedRegion}
           onUnpin={() => setPinnedRegion(null)}
           onResetView={() => { setPinnedRegion(null); setResetKey((k) => k + 1) }}
@@ -288,6 +341,7 @@ export function BrainScene({
           controlsRef={controlsRef}
           focusTo={pinnedRegion ? (BRAIN_REGIONS.find(r=>r.id===pinnedRegion)?.position as [number,number,number]) ?? null : null}
           resetKey={resetKey}
+          durationSeconds={focusDuration}
         />
       </Suspense>
       
@@ -402,6 +456,8 @@ function OverlayUI({
   onChangeSpeed,
   showLabels,
   onToggleLabels,
+  focusDuration,
+  onChangeFocusDuration,
   pinnedRegion,
   onUnpin,
   onResetView,
@@ -414,6 +470,8 @@ function OverlayUI({
   onChangeSpeed: (v: number) => void
   showLabels: boolean
   onToggleLabels: (v: boolean) => void
+  focusDuration: number
+  onChangeFocusDuration: (v: number) => void
   pinnedRegion: string | null
   onUnpin: () => void
   onResetView: () => void
@@ -422,6 +480,7 @@ function OverlayUI({
 }) {
   const pinned = pinnedRegion ? BRAIN_REGIONS.find((r) => r.id === pinnedRegion) : null
   const [query, setQuery] = useState('')
+  const [highlightIdx, setHighlightIdx] = useState(0)
   const results = query.length
     ? BRAIN_REGIONS.filter(r =>
         r.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -472,12 +531,31 @@ function OverlayUI({
             style={{ width: 160 }}
           />
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <span style={{ fontSize: 12, opacity: 0.9 }}>Focus</span>
+          <input
+            type="range"
+            min={0.3}
+            max={3}
+            step={0.1}
+            value={focusDuration}
+            onChange={(e) => onChangeFocusDuration(parseFloat(e.target.value))}
+            style={{ width: 160 }}
+          />
+        </div>
         <div style={{ marginTop: 10 }}>
           <input
             type="text"
             placeholder="Search region..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setHighlightIdx(0) }}
+            onKeyDown={(e) => {
+              if (!results.length) return
+              if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx((i) => Math.min(results.length - 1, i + 1)) }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx((i) => Math.max(0, i - 1)) }
+              if (e.key === 'Enter') { e.preventDefault(); const r = results[highlightIdx]; if (r) { onSelectRegion(r.id); setQuery('') } }
+              if (e.key === 'Escape') { e.preventDefault(); setQuery('') }
+            }}
             style={{
               width: '100%',
               padding: '6px 8px',
@@ -496,11 +574,11 @@ function OverlayUI({
               borderRadius: 8,
               overflow: 'hidden'
             }}>
-              {results.map(r => (
+              {results.map((r, idx) => (
                 <div
                   key={r.id}
                   onClick={() => { setQuery(''); onSelectRegion(r.id) }}
-                  style={{ padding: '6px 8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
+                  style={{ padding: '6px 8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', background: idx===highlightIdx? 'rgba(255,255,255,0.08)': 'transparent' }}
                 >
                   <span>{r.name}</span>
                   <span style={{ opacity: 0.8 }}>{r.abbreviation}</span>
@@ -515,6 +593,20 @@ function OverlayUI({
             style={{ padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
           >
             Reset View
+          </button>
+          <button
+            onClick={() => {
+              try {
+                localStorage.removeItem('ob.showLabels')
+                localStorage.removeItem('ob.pinnedRegion')
+                localStorage.removeItem('ob.autoRotate')
+                localStorage.removeItem('ob.autoRotateSpeed')
+                localStorage.removeItem('ob.focusDuration')
+              } catch {}
+            }}
+            style={{ marginLeft: 8, padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
+          >
+            Reset Prefs
           </button>
         </div>
         {pinned && (
@@ -552,10 +644,12 @@ function CameraFocus({
   controlsRef,
   focusTo,
   resetKey,
+  durationSeconds = 1.5,
 }: {
   controlsRef: MutableRefObject<any>
   focusTo: [number, number, number] | null
   resetKey: number
+  durationSeconds?: number
 }) {
   const targetRef = useRef<THREE.Vector3 | null>(null)
   const progressRef = useRef(0)
@@ -577,7 +671,7 @@ function CameraFocus({
     const controls = controlsRef.current
     const camera = state.camera
     // Ease progress
-    const speed = 1.5 // seconds to focus
+    const speed = Math.max(0.2, durationSeconds)
     progressRef.current = Math.min(1, progressRef.current + delta / speed)
     const t = 1 - Math.pow(1 - progressRef.current, 3) // cubic ease-out
 

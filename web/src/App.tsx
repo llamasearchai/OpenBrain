@@ -8,6 +8,27 @@ import { BRAIN_REGIONS } from './data/brainRegions'
 import type { VisualizationMode } from './services/visualizationModes'
 import { Legend } from './components/Legend'
 import { useLocalStorage } from './hooks/useLocalStorage'
+import React from 'react'
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }>{
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(err: any) { console.error('App error boundary caught:', err) }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 20 }}>
+          <h2>Something went wrong.</h2>
+          <button onClick={() => location.reload()}>Reload</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // Create a simulator instance for the app
 const neuralSimulator = new NeuralActivitySimulator();
@@ -19,6 +40,11 @@ function App() {
   const intervalRef = useRef<number | null>(null)
   const [visualizationMode, setVisualizationMode] = useLocalStorage<VisualizationMode>('ob.vizMode', 'structural')
   const [activePanel, setActivePanel] = useLocalStorage<'metrics' | 'legend'>('ob.activePanel', 'metrics')
+  const [wsLive, setWsLive] = useState(false)
+  const backoffRef = useRef<number>(1000)
+  const reconnectTimer = useRef<number | null>(null)
+  const [fps, setFps] = useState<number | null>(null)
+  const [showFps, setShowFps] = useState(false)
   type BrainWsMetrics = { activation_mean: number; activation_std: number; regions: Record<string, number> }
   type BrainWsPayload = { ts: number; metrics: BrainWsMetrics }
   const [wsData, setWsData] = useState<BrainWsPayload | null>(null)
@@ -39,37 +65,68 @@ function App() {
     const envAny = import.meta as unknown as { env?: Record<string, string> }
     const wsUrl = (envAny.env?.VITE_WS_URL as string | undefined) || 'ws://127.0.0.1:8000/ws/brain'
     
-    try {
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-      
-      ws.onmessage = (evt: MessageEvent<string>) => {
-        try {
-          // If we receive real data from WebSocket, keep a lightweight debug view
-          const data = JSON.parse(evt.data) as BrainWsPayload
-          setWsData(data)
-          // In a real implementation, convert to NeuralActivity format and merge
-        } catch (e) {
-          console.error('Error parsing WebSocket message:', e)
+    const connect = () => {
+      try {
+        const ws = new WebSocket(wsUrl)
+        wsRef.current = ws
+        ws.onopen = () => { setWsLive(true); backoffRef.current = 1000 }
+        ws.onclose = () => {
+          setWsLive(false)
+          if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+          const delay = Math.min(30000, backoffRef.current * 2)
+          backoffRef.current = delay
+          reconnectTimer.current = window.setTimeout(connect, delay)
         }
+        ws.onmessage = (evt: MessageEvent<string>) => {
+          try {
+            const data = JSON.parse(evt.data) as BrainWsPayload
+            setWsData(data)
+          } catch (e) {
+            console.error('Error parsing WebSocket message:', e)
+          }
+        }
+        ws.onerror = (error) => {
+          console.warn('WebSocket error:', error)
+        }
+      } catch (e) {
+        console.warn('Could not connect to WebSocket, using simulation only:', e)
       }
-      
-      ws.onerror = (error) => {
-        console.warn('WebSocket error, falling back to simulation:', error)
-      }
-    } catch (e) {
-      console.warn('Could not connect to WebSocket, using simulation only:', e)
     }
-    
+    connect()
+
     return () => {
       neuralSimulator.stop()
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
       }
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
+      if (wsRef.current) { wsRef.current.close() }
+      if (reconnectTimer.current) { clearTimeout(reconnectTimer.current) }
     }
+  }, [])
+
+  // Simple FPS tracker (dev only)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    let last = performance.now()
+    let frames = 0
+    let acc = 0
+    let raf = 0
+    const loop = (t: number) => {
+      const dt = t - last
+      last = t
+      frames += 1
+      acc += dt
+      if (acc >= 1000) {
+        setFps(frames)
+        frames = 0
+        acc = 0
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    const onKey = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'f') setShowFps((s) => !s) }
+    window.addEventListener('keydown', onKey)
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey) }
   }, [])
 
   const handleRegionSelect = (regionId: string) => {
@@ -105,18 +162,28 @@ function App() {
             <button onClick={() => setActivePanel('metrics')} style={{ background: activePanel==='metrics' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Metrics</button>
             <button onClick={() => setActivePanel('legend')} style={{ background: activePanel==='legend' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>Legend</button>
           </div>
+          <div className="ob-badge" style={{ background: wsLive ? 'rgba(0,200,120,0.25)' : 'rgba(255,255,255,0.08)' }}>
+            WS: {wsLive ? 'Live' : 'Sim'}
+          </div>
         </div>
       </div>
 
       <div className="ob-content">
         <div style={{ flex: 1 }}>
-          <BrainScene
-            activity={activity}
-            onRegionClick={handleRegionSelect}
-            selectedRegion={selectedRegion}
-            visualizationMode={visualizationMode}
-            onStimulateRegion={(id) => neuralSimulator.stimulateRegion(id, 0.2)}
-          />
+          <ErrorBoundary>
+            <BrainScene
+              activity={activity}
+              onRegionClick={handleRegionSelect}
+              selectedRegion={selectedRegion}
+              visualizationMode={visualizationMode}
+              onStimulateRegion={(id) => neuralSimulator.stimulateRegion(id, 0.2)}
+            />
+          </ErrorBoundary>
+          {import.meta.env.DEV && showFps && (
+            <div style={{ position: 'absolute', top: 56, right: 10, background: 'rgba(0,0,0,0.6)', color: 'white', padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.2)' }}>
+              FPS: {fps ?? '-'}
+            </div>
+          )}
         </div>
 
         <div className="ob-panel">
