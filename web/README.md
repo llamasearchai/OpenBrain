@@ -66,4 +66,45 @@ export default tseslint.config([
     },
   },
 ])
+
+## Development
+
+Run the dev server:
+
+```
+cd web && npm ci && npm run dev
+# use alternate port if 5173 is busy
+VITE_PORT=5174 npm run dev
+```
+
+Open http://127.0.0.1:5173 (or the alternate port) in your browser.
+
+## Tests
+
+```
+npm test         # run unit/integration tests
+npm run lint     # eslint
+npm run build    # type-check + build
+```
+
+### Keyboard & Accessibility
+
+- Toggle FPS overlay (dev only): press `F`.
+- Overlay search: type to filter, ArrowUp/Down to navigate, Enter to select, Esc to clear.
+- Controls have aria-labels; Metrics/Legend uses a tablist; search results are a listbox with options.
+
+### Visualization Features
+
+- Continuous clockwise rotation (adjustable speed); camera focus with adjustable duration.
+- Hover tooltips with region name/abbrev, key functions, live activation and blood flow.
+- Click or select from Legend/search to pin and focus a region.
+- Stimulate pinned region to raise activation for demonstration.
+- Legend panel lists regions with color chips; toolbar toggles Metrics/Legend; WS status badge shows Live/Sim.
+
+### Troubleshooting
+
+- If the GLTF model fails to load, a retry toast appears; click “Retry Load”.
+- Enable hardware acceleration in your browser for WebGL.
+- If WS disconnects, the app automatically retries with exponential backoff; badge will indicate Sim vs Live.
+
 ```
