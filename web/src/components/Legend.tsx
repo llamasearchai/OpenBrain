@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import { BRAIN_REGIONS } from '../data/brainRegions'
 
 interface LegendProps {
@@ -7,11 +7,21 @@ interface LegendProps {
 }
 
 export function Legend({ selected, onSelect }: LegendProps) {
+  const [filter, setFilter] = useState<string>('all')
+  const chips = ['all','frontal-lobe','parietal-lobe','temporal-lobe','occipital-lobe','cerebellum','brainstem']
+  const filtered = useMemo(() => (filter === 'all' ? BRAIN_REGIONS : BRAIN_REGIONS.filter(r => r.id === filter)), [filter])
   return (
     <div>
       <h3>Region Legend</h3>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        {chips.map((c) => (
+          <button key={c} onClick={() => setFilter(c)} style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid var(--ob-card-border)', background: filter===c ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)', color: 'inherit' }} aria-label={`Filter ${c}`}>
+            {c.replace('-lobe','')}
+          </button>
+        ))}
+      </div>
       <div className="ob-scroll">
-        {BRAIN_REGIONS.map((r) => (
+        {filtered.map((r) => (
           <div
             key={r.id}
             onClick={() => onSelect?.(r.id)}
@@ -47,4 +57,3 @@ export function Legend({ selected, onSelect }: LegendProps) {
     </div>
   )
 }
-

@@ -14,6 +14,7 @@ import { BrainConnectivity } from './BrainConnectivity'
 // Fix type-only import for GLTF
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { useLocalStorage } from '../hooks/useLocalStorage'
+import { useThree } from '@react-three/fiber'
 
 const visualizationManager = new VisualizationModeManager();
 
@@ -273,6 +274,7 @@ export function BrainScene({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 5, 5]} intensity={1.0} />
       <pointLight position={[0, 0, 0]} intensity={0.5} color="#4287f5" />
+      <RaycasterConfig />
       
       <Suspense fallback={null}>
         <Physics gravity={[0, -9.81, 0]}>
@@ -345,8 +347,8 @@ export function BrainScene({
         />
       </Suspense>
       
-      <gridHelper args={[10, 10]} />
-      <axesHelper args={[5]} />
+      {import.meta.env.DEV && <gridHelper args={[10, 10]} />}
+      {import.meta.env.DEV && <axesHelper args={[5]} />}
       {/* Auto-rotation with damping and user speed control */}
       <OrbitControls
         ref={controlsRef}
@@ -363,6 +365,18 @@ export function BrainScene({
       />
     </Canvas>
   )
+}
+
+function RaycasterConfig() {
+  const { raycaster } = useThree()
+  useEffect(() => {
+    // @ts-expect-error firstHitOnly is provided by three-mesh-bvh or similar; safe to set if present
+    ;(raycaster as any).firstHitOnly = true
+    if (raycaster.params?.Points) {
+      raycaster.params.Points.threshold = 0.1
+    }
+  }, [raycaster])
+  return null
 }
 
 function RegionProxies({
