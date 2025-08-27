@@ -1,0 +1,35 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP Requests",
+      "targets": [
+        {"expr": "sum by (endpoint,method,http_status) (rate(openbrain_requests_total[1m]))"}
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Request duration (p95)",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le,endpoint,method) (rate(openbrain_request_duration_seconds_bucket[5m])))"}
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["openbrain"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "",
+  "title": "OpenBrain Backend",
+  "uid": "openbrain-backend",
+  "version": 1
+}

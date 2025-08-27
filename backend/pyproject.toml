@@ -6,10 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "openbrain-backend"
 version = "0.1.0"
 description = "OpenBrain Digital Twin API"
-authors = [{ name = "Nik Jois", email = "nikjois@llamasearch.ai" }]
+authors = [{ name = "Nik Jois", email = "llamasearchai@users.noreply.github.com" }]
 dependencies = []
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
-
