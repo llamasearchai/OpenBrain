@@ -4,26 +4,42 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
+    name: Backend (pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r backend/requirements.txt
-      - run: pytest -q backend/tests
+      - name: Install deps
+        run: pip install -r backend/requirements.txt
+      - name: Run tests
+        run: pytest --cov=backend/app --cov-report=term-missing -q
+
   web:
+    name: Web (lint, test, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: |
-          cd web
-          npm ci
-          npm test --silent
-          npm run build
-
+      - name: Install deps
+        working-directory: web
+        run: npm ci
+      - name: Lint
+        working-directory: web
+        run: npm run lint --silent
+      - name: Test
+        working-directory: web
+        env:
+          VITEST_SINGLE_WORKER: '1'
+        run: npm test --silent -- --coverage
+      - name: Build
+        working-directory: web
+        run: npm run build

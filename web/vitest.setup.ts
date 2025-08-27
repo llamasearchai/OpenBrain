@@ -6,17 +6,24 @@ class RO {
   unobserve() {}
   disconnect() {}
 }
-// @ts-expect-error global available in vitest
-global.ResizeObserver = RO as any
+;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = RO as unknown
 
 // Stub canvas context to avoid WebGL access in tests
-// @ts-expect-error jsdom
-HTMLCanvasElement.prototype.getContext = () => ({})
+// @ts-expect-error jsdom env: canvas not available
+HTMLCanvasElement.prototype.getContext = () => ({}) as unknown
 
 // Optional: matchMedia stub to satisfy libraries querying media
-// @ts-expect-error jsdom
-window.matchMedia = window.matchMedia || function () {
-  return { matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false } }
-} as any
+window.matchMedia = window.matchMedia || (function () {
+  return {
+    matches: false,
+    // Legacy
+    addListener() {},
+    removeListener() {},
+    // Modern
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() { return false },
+  } as unknown as typeof window.matchMedia
+})()
 
 
