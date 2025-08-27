@@ -51,8 +51,8 @@ web/*.tsbuildinfo*
 data/
 *.tmp
 tmp/
+.node/
 
 # Docker
 **/.docker/
-
 
