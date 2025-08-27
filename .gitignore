@@ -1,13 +1,58 @@
-# Python
-backend/.venv/
-__pycache__/
-*.pyc
+##### Global #####
+# OS / Editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Node
+# Env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Coverage/artifacts
+.coverage
+coverage/
+**/.pytest_cache/
+**/.hypothesis/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.tox/
+**/.nox/
+
+##### Python #####
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+.venv/
+backend/.venv/
+
+##### Node/Frontend #####
 web/node_modules/
 web/dist/
+web/.vite/
+web/coverage/
+web/*.tsbuildinfo
+web/*.tsbuildinfo*
 
-# System
-.DS_Store
+##### Misc #####
+# Local data volumes or large assets (keep via LFS or releases)
+data/
+*.tmp
+tmp/
+
+# Docker
+**/.docker/
 
 
