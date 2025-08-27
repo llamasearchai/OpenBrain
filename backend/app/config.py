@@ -22,12 +22,11 @@ class Settings(BaseSettings):
         return Path(__file__).resolve().parents[2]
 
     def public_brain_gltf(self) -> Path:
-        return self.repo_root() / "web/public/models/human_brain/Human_Brain.gltf"
+        return self.repo_root() / "web/public/models/openbrain/brain.gltf"
 
     def source_brain_gltf_dir(self) -> Path:
         return self.repo_root() / "detailed-human-brain-model-2025-05-03-05-00-45-utc/[GLTF] Human_Brain"
 
 
 settings = Settings()  # Singleton-style simple access
-
 

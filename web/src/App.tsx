@@ -9,6 +9,7 @@ import type { VisualizationMode } from './services/visualizationModes'
 import { Legend } from './components/Legend'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import React from 'react'
+import type { ErrorInfo } from 'react'
 import { ensurePrefsMigrated } from './services/prefs'
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }>{
@@ -17,8 +18,8 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
     this.state = { hasError: false }
   }
   static getDerivedStateFromError() { return { hasError: true } }
-  componentDidCatch(err: any) { console.error('App error boundary caught:', err) }
-  render() {
+  override componentDidCatch(error: Error, info: ErrorInfo) { console.error('App error boundary caught:', error, info) }
+  override render() {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 20 }}>
@@ -206,13 +207,13 @@ function App() {
                   <div>
                     <div className="ob-muted" style={{ fontSize: 12 }}>Activation</div>
                     <div style={{ fontSize: 18, fontWeight: 'bold' }}>
-                      {(activity.globalActivation * 100).toFixed(1)}%
+                      {(((activity?.globalActivation) ?? 0) * 100).toFixed(1)}%
                     </div>
                   </div>
                   <div>
                     <div className="ob-muted" style={{ fontSize: 12 }}>Timestamp</div>
                     <div style={{ fontSize: 14 }}>
-                      {new Date(activity.timestamp).toLocaleTimeString()}
+                      {new Date(activity?.timestamp ?? Date.now()).toLocaleTimeString()}
                     </div>
                   </div>
                 </div>
@@ -221,7 +222,7 @@ function App() {
               <div style={{ marginBottom: 20 }}>
                 <h3>Brain Waves</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {Object.entries(activity.brainWaves).map(([wave, value]) => (
+                  {Object.entries(activity?.brainWaves ?? {}).map(([wave, value]) => (
                     <div key={wave}>
                       <div className="ob-muted" style={{ fontSize: 12, textTransform: 'uppercase' }}>
                         {wave}
@@ -237,7 +238,7 @@ function App() {
               <div style={{ marginBottom: 20 }}>
                 <h3>Region Activity</h3>
                 <div className="ob-scroll">
-                  {Object.entries(activity.regions).map(([regionId, regionActivity]) => {
+                  {Object.entries(activity?.regions ?? {}).map(([regionId, regionActivity]) => {
                     const region = BRAIN_REGIONS.find(r => r.id === regionId)
                     return region ? (
                       <div
@@ -284,19 +285,19 @@ function App() {
                   <div className="ob-muted" style={{ fontSize: 12, marginBottom: 10 }}>
                     {selectedRegionData.functions.join(', ')}
                   </div>
-                  {activity.regions[selectedRegion] && (
+                  {activity?.regions?.[selectedRegion] && (
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Activation:</span>
-                        <span>{(activity.regions[selectedRegion].activation * 100).toFixed(1)}%</span>
+                        <span>{((activity?.regions?.[selectedRegion]?.activation ?? 0) * 100).toFixed(1)}%</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Temperature:</span>
-                        <span>{activity.regions[selectedRegion].temperature.toFixed(1)}°C</span>
+                        <span>{(activity?.regions?.[selectedRegion]?.temperature ?? 0).toFixed(1)}°C</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Blood Flow:</span>
-                        <span>{(activity.regions[selectedRegion].bloodFlow * 100).toFixed(0)}%</span>
+                        <span>{((activity?.regions?.[selectedRegion]?.bloodFlow ?? 0) * 100).toFixed(0)}%</span>
                       </div>
                     </div>
                   )}
@@ -306,7 +307,7 @@ function App() {
               <div style={{ marginBottom: 20 }}>
                 <h3>Connections</h3>
                 <div className="ob-scroll">
-                  {activity.connections.map((conn, index) => {
+                  {(activity?.connections ?? []).map((conn, index) => {
                     const source = BRAIN_REGIONS.find(r => r.id === conn.source)
                     const target = BRAIN_REGIONS.find(r => r.id === conn.target)
                     return source && target ? (
@@ -336,7 +337,7 @@ function App() {
           ) : (
             <div>
               <h2>Legend</h2>
-              <Legend selected={selectedRegion || undefined} onSelect={handleRegionSelect} />
+              <Legend selected={selectedRegion ?? null} onSelect={handleRegionSelect} />
             </div>
           )}
         </div>

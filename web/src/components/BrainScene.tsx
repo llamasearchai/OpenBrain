@@ -1,5 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber'
+import type { ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Environment, Text, Html } from '@react-three/drei'
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { Suspense, useState, useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
@@ -14,61 +16,45 @@ import { BrainConnectivity } from './BrainConnectivity'
 // Fix type-only import for GLTF
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { useLocalStorage } from '../hooks/useLocalStorage'
-import { useThree } from '@react-three/fiber'
 
 const visualizationManager = new VisualizationModeManager();
 
-function Loader() {
-  return null
-}
 
 function BrainModel(props: {
   onRegionClick?: (regionId: string) => void;
   onHoverRegion?: (regionId: string | null) => void;
   onModelReady?: (ready: boolean) => void;
-  activity?: NeuralActivity | null;
+  activity?: NeuralActivity | null | undefined;
 }) {
   // Replace useLoader with manual loader and a safe fallback when the external .bin is missing
   const [gltf, setGltf] = useState<GLTF | null>(null)
   const meshRef = useRef<THREE.Mesh>(null)
-  const [gltfError, setGltfError] = useState<string | null>(null)
-  const hoverRaf = useRef<number | null>(null)
 
   useEffect(() => {
-    const loader = new GLTFLoader()
-    loader.load(
-      '/models/human_brain/Human_Brain.gltf',
-      (loaded) => {
-        const gl = loaded as unknown as GLTF
-        // Collect mesh/node names for mapping diagnostics
-        const names = new Set<string>()
-        gl.scene.traverse((obj: any) => {
-          if (obj && obj.name) names.add(String(obj.name))
-        })
-        const map: Record<string, string> = {}
-        const unmapped: string[] = []
-        names.forEach((n) => {
-          const id = meshNameToRegionId(n)
-          if (id) map[n] = id
-          else unmapped.push(n)
-        })
-        // Helpful dev logs
-        if (Object.keys(map).length) console.table(map)
-        if (unmapped.length) console.warn('Unmapped GLTF nodes:', unmapped.slice(0, 10), `(+${Math.max(0, unmapped.length - 10)} more)`) 
-        else console.info('Unmapped meshes: N=0')
-
-        setGltf(gl)
-        setGltfError(null)
-        props.onModelReady?.(true)
-      },
-      undefined,
-      (err) => {
-        console.warn('GLTF load failed, using placeholder geometry:', err)
+    const loader: any = new GLTFLoader()
+    const url = '/models/openbrain/brain.gltf'
+    if (loader && typeof loader.load === 'function') {
+      try {
+        loader.load(
+          url,
+          (loaded: unknown) => { setGltf(loaded as GLTF); props.onModelReady?.(true) },
+          undefined,
+          (err: unknown) => {
+            console.warn('GLTF load failed, using placeholder geometry:', err)
+            setGltf(null)
+            props.onModelReady?.(false)
+          }
+        )
+      } catch (err) {
+        console.warn('GLTF load threw synchronously; using placeholder geometry:', err)
         setGltf(null)
-        setGltfError('Failed to load brain model.')
         props.onModelReady?.(false)
       }
-    )
+    } else {
+      console.warn('GLTFLoader.load not available in this environment; using placeholder geometry')
+      setGltf(null)
+      props.onModelReady?.(false)
+    }
   }, [])
 
   // Update material based on visualization mode and activity
@@ -78,27 +64,22 @@ function BrainModel(props: {
     }
   })
 
-  const pickRegionIdFromEvent = (e: any): string | null => {
+  const pickRegionIdFromEvent = (e: ThreeEvent<MouseEvent>): string | null => {
     // Prefer mesh name mapping
     const byName = meshNameToRegionId(e?.object?.name)
     if (byName) return byName
     // Fallback: nearest region center to the intersection point
     const p = e?.point as THREE.Vector3 | undefined
     if (!p) return null
-    let best: { id: string; d2: number; threshold2: number } | null = null
+    let best: { id: string; d2: number } | null = null
     for (const r of BRAIN_REGIONS) {
       const dx = p.x - r.position[0]
       const dy = p.y - r.position[1]
       const dz = p.z - r.position[2]
       const d2 = dx * dx + dy * dy + dz * dz
-      // derive a region-specific radius: half the mean size
-      const mean = (r.size[0] + r.size[1] + r.size[2]) / 3
-      const radius = Math.max(0.5, mean * 0.5)
-      const threshold2 = radius * radius
-      if (!best || d2 < best.d2) best = { id: r.id, d2, threshold2 }
+      if (!best || d2 < best.d2) best = { id: r.id, d2 }
     }
-    if (!best) return null
-    return best.d2 <= best.threshold2 ? best.id : null
+    return best?.id ?? null
   }
 
   // If GLTF is available, render it; otherwise render a lightweight placeholder
@@ -107,19 +88,16 @@ function BrainModel(props: {
       <primitive
         object={gltf.scene}
         scale={0.01}
-        onPointerMove={(e) => {
-          if (hoverRaf.current) cancelAnimationFrame(hoverRaf.current)
-          hoverRaf.current = requestAnimationFrame(() => {
-            const id = pickRegionIdFromEvent(e)
-            props.onHoverRegion?.(id)
-          })
+        onPointerMove={(e: ThreeEvent<MouseEvent>) => {
+          const id = pickRegionIdFromEvent(e)
+          props.onHoverRegion?.(id)
         }}
-        onPointerOver={(e) => {
+        onPointerOver={(e: ThreeEvent<MouseEvent>) => {
           const id = pickRegionIdFromEvent(e)
           props.onHoverRegion?.(id)
         }}
         onPointerOut={() => props.onHoverRegion?.(null)}
-        onClick={(e) => {
+        onClick={(e: ThreeEvent<MouseEvent>) => {
           const id = pickRegionIdFromEvent(e)
           if (id && props.onRegionClick) props.onRegionClick(id)
         }}
@@ -131,26 +109,9 @@ function BrainModel(props: {
   return (
     <group>
       <mesh ref={meshRef} position={[0, 0, 0]}>
-        <sphereGeometry args={[2.8, 24, 24]} />
+        <sphereGeometry args={[2.8, 32, 32]} />
         <meshStandardMaterial color="#888" transparent opacity={0.2} wireframe />
       </mesh>
-      {gltfError && (
-        <Html center distanceFactor={4} transform>
-          <div role="alert" style={{ background: 'rgba(0,0,0,0.7)', color: 'white', padding: 10, borderRadius: 8, border: '1px solid #555' }}>
-            <div style={{ marginBottom: 8 }}>{gltfError}</div>
-            <button onClick={() => {
-              // trigger reload by re-running loader effect via temp state change
-              setGltfError(null)
-              const loader = new GLTFLoader()
-              loader.load('/models/human_brain/Human_Brain.gltf',
-                (loaded) => { setGltf(loaded as unknown as GLTF); props.onModelReady?.(true) },
-                undefined,
-                (err) => { console.warn('Retry failed:', err); setGltfError('Retry failed. Check assets and try again.') }
-              )
-            }} aria-label="Retry loading brain model">Retry Load</button>
-          </div>
-        </Html>
-      )}
     </group>
   )
 }
@@ -186,7 +147,7 @@ function RegionHighlight({ regionId }: { regionId: string | null }) {
   )
 }
 
-function BrainWaves({ activity }: { activity?: NeuralActivity | null }) {
+function BrainWaves({ activity }: { activity?: NeuralActivity | null | undefined }) {
   const meshRef = useRef<THREE.Mesh>(null)
   
   useFrame(() => {
@@ -251,8 +212,7 @@ export function BrainScene({
   const [pinnedRegion, setPinnedRegion] = useLocalStorage<string | null>('ob.pinnedRegion', null)
   const [autoRotate, setAutoRotate] = useLocalStorage<boolean>('ob.autoRotate', true)
   const [autoRotateSpeed, setAutoRotateSpeed] = useLocalStorage<number>('ob.autoRotateSpeed', -0.2) // negative = clockwise
-  const [focusDuration, setFocusDuration] = useLocalStorage<number>('ob.focusDuration', 1.5)
-  const controlsRef = useRef<any>(null)
+  const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const [resetKey, setResetKey] = useState(0)
   const [hasGltf, setHasGltf] = useState(false)
   
@@ -274,7 +234,6 @@ export function BrainScene({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 5, 5]} intensity={1.0} />
       <pointLight position={[0, 0, 0]} intensity={0.5} color="#4287f5" />
-      <RaycasterConfig />
       
       <Suspense fallback={null}>
         <Physics gravity={[0, -9.81, 0]}>
@@ -294,7 +253,7 @@ export function BrainScene({
         </Physics>
         
         <RegionHighlight regionId={(selectedRegion || hoveredRegion || pinnedRegion) ?? null} />
-        <RegionTooltip regionId={selectedRegion || hoveredRegion || pinnedRegion} activity={activity} />
+        <RegionTooltip regionId={(selectedRegion ?? hoveredRegion ?? pinnedRegion) ?? null} activity={activity} />
         {!hasGltf && (
           <RegionProxies
             onHover={setHoveredRegion}
@@ -312,8 +271,6 @@ export function BrainScene({
           onChangeSpeed={(v) => setAutoRotateSpeed(v)}
           showLabels={showLabels}
           onToggleLabels={(v) => setShowLabels(v)}
-          focusDuration={focusDuration}
-          onChangeFocusDuration={(v) => setFocusDuration(v)}
           pinnedRegion={pinnedRegion}
           onUnpin={() => setPinnedRegion(null)}
           onResetView={() => { setPinnedRegion(null); setResetKey((k) => k + 1) }}
@@ -343,12 +300,11 @@ export function BrainScene({
           controlsRef={controlsRef}
           focusTo={pinnedRegion ? (BRAIN_REGIONS.find(r=>r.id===pinnedRegion)?.position as [number,number,number]) ?? null : null}
           resetKey={resetKey}
-          durationSeconds={focusDuration}
         />
       </Suspense>
       
-      {import.meta.env.DEV && <gridHelper args={[10, 10]} />}
-      {import.meta.env.DEV && <axesHelper args={[5]} />}
+      <gridHelper args={[10, 10]} />
+      <axesHelper args={[5]} />
       {/* Auto-rotation with damping and user speed control */}
       <OrbitControls
         ref={controlsRef}
@@ -365,18 +321,6 @@ export function BrainScene({
       />
     </Canvas>
   )
-}
-
-function RaycasterConfig() {
-  const { raycaster } = useThree()
-  useEffect(() => {
-    // @ts-expect-error firstHitOnly is provided by three-mesh-bvh or similar; safe to set if present
-    ;(raycaster as any).firstHitOnly = true
-    if (raycaster.params?.Points) {
-      raycaster.params.Points.threshold = 0.1
-    }
-  }, [raycaster])
-  return null
 }
 
 function RegionProxies({
@@ -418,7 +362,7 @@ function RegionProxies({
   )
 }
 
-function RegionTooltip({ regionId, activity }: { regionId: string | null, activity?: NeuralActivity | null }) {
+function RegionTooltip({ regionId, activity }: { regionId: string | null, activity?: NeuralActivity | null | undefined }) {
   if (!regionId) return null
   const region = BRAIN_REGIONS.find(r => r.id === regionId)
   if (!region) return null
@@ -470,8 +414,6 @@ function OverlayUI({
   onChangeSpeed,
   showLabels,
   onToggleLabels,
-  focusDuration,
-  onChangeFocusDuration,
   pinnedRegion,
   onUnpin,
   onResetView,
@@ -484,8 +426,6 @@ function OverlayUI({
   onChangeSpeed: (v: number) => void
   showLabels: boolean
   onToggleLabels: (v: boolean) => void
-  focusDuration: number
-  onChangeFocusDuration: (v: number) => void
   pinnedRegion: string | null
   onUnpin: () => void
   onResetView: () => void
@@ -494,7 +434,8 @@ function OverlayUI({
 }) {
   const pinned = pinnedRegion ? BRAIN_REGIONS.find((r) => r.id === pinnedRegion) : null
   const [query, setQuery] = useState('')
-  const [highlightIdx, setHighlightIdx] = useState(0)
+  const [focusDuration, setFocusDuration] = useLocalStorage<number>('ob.focusDuration', 1.5)
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1)
   const results = query.length
     ? BRAIN_REGIONS.filter(r =>
         r.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -516,23 +457,21 @@ function OverlayUI({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>
           <strong>View Controls</strong>
-          <label htmlFor="ob-auto-rotate" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
-              id="ob-auto-rotate"
               type="checkbox"
-              aria-label="Auto rotate"
               checked={autoRotate}
               onChange={(e) => onToggleAutoRotate(e.target.checked)}
+              aria-label="Auto rotate"
             />
-            Auto-rotate
+            Auto rotate
           </label>
-          <label htmlFor="ob-show-labels" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
-              id="ob-show-labels"
               type="checkbox"
-              aria-label="Toggle labels"
               checked={showLabels}
               onChange={(e) => onToggleLabels(e.target.checked)}
+              aria-label="Toggle labels"
             />
             Labels
           </label>
@@ -550,17 +489,17 @@ function OverlayUI({
             aria-label="Rotate speed"
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
           <span style={{ fontSize: 12, opacity: 0.9 }}>Focus</span>
           <input
-            type="range"
-            min={0.3}
-            max={3}
+            type="number"
+            min={0.5}
+            max={5}
             step={0.1}
             value={focusDuration}
-            onChange={(e) => onChangeFocusDuration(parseFloat(e.target.value))}
-            style={{ width: 160 }}
+            onChange={(e) => setFocusDuration(parseFloat(e.target.value))}
             aria-label="Camera focus duration"
+            style={{ width: 70 }}
           />
         </div>
         <div style={{ marginTop: 10 }}>
@@ -568,14 +507,21 @@ function OverlayUI({
             type="text"
             placeholder="Search region..."
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setHighlightIdx(0) }}
+            onChange={(e) => { setQuery(e.target.value); setHighlightedIndex(-1) }}
             onKeyDown={(e) => {
-              if (!results.length) return
-              if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx((i) => Math.min(results.length - 1, i + 1)) }
-              if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx((i) => Math.max(0, i - 1)) }
-              if (e.key === 'Enter') { e.preventDefault(); const r = results[highlightIdx]; if (r) { onSelectRegion(r.id); setQuery('') } }
-              if (e.key === 'Escape') { e.preventDefault(); setQuery('') }
+              if (e.key === 'ArrowDown') {
+                if (results.length > 0) setHighlightedIndex((i) => (i < 0 ? 0 : Math.min(results.length - 1, i + 1)))
+              } else if (e.key === 'ArrowUp') {
+                if (results.length > 0) setHighlightedIndex((i) => Math.max(-1, i - 1))
+              } else if (e.key === 'Enter') {
+                if (highlightedIndex >= 0 && results[highlightedIndex]) {
+                  const r = results[highlightedIndex]
+                  setQuery('')
+                  onSelectRegion(r.id)
+                }
+              }
             }}
+            aria-label="Search brain region"
             style={{
               width: '100%',
               padding: '6px 8px',
@@ -585,11 +531,9 @@ function OverlayUI({
               color: 'white',
               outline: 'none'
             }}
-            aria-label="Search brain region"
-            aria-controls="ob-search-results"
           />
           {results.length > 0 && (
-            <div id="ob-search-results" role="listbox" aria-label="Search results" style={{
+            <div style={{
               marginTop: 6,
               background: 'rgba(0,0,0,0.5)',
               border: '1px solid rgba(255,255,255,0.15)',
@@ -600,9 +544,7 @@ function OverlayUI({
                 <div
                   key={r.id}
                   onClick={() => { setQuery(''); onSelectRegion(r.id) }}
-                  role="option"
-                  aria-selected={idx === highlightIdx}
-                  style={{ padding: '6px 8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', background: idx===highlightIdx? 'rgba(255,255,255,0.08)': 'transparent' }}
+                  style={{ padding: '6px 8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', background: highlightedIndex===idx ? 'rgba(255,255,255,0.12)' : 'transparent' }}
                 >
                   <span>{r.name}</span>
                   <span style={{ opacity: 0.8 }}>{r.abbreviation}</span>
@@ -615,27 +557,8 @@ function OverlayUI({
           <button
             onClick={onResetView}
             style={{ padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
-            aria-label="Reset camera view"
           >
             Reset View
-          </button>
-          <button
-            onClick={() => {
-              try {
-                localStorage.removeItem('ob.showLabels')
-                localStorage.removeItem('ob.pinnedRegion')
-                localStorage.removeItem('ob.autoRotate')
-                localStorage.removeItem('ob.autoRotateSpeed')
-                localStorage.removeItem('ob.focusDuration')
-                localStorage.removeItem('ob.selectedRegion')
-                localStorage.removeItem('ob.vizMode')
-                localStorage.removeItem('ob.activePanel')
-              } catch {}
-            }}
-            style={{ marginLeft: 8, padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer' }}
-            aria-label="Reset preferences"
-          >
-            Reset Prefs
           </button>
         </div>
         {pinned && (
@@ -673,12 +596,10 @@ function CameraFocus({
   controlsRef,
   focusTo,
   resetKey,
-  durationSeconds = 1.5,
 }: {
-  controlsRef: MutableRefObject<any>
+  controlsRef: MutableRefObject<OrbitControlsImpl | null>
   focusTo: [number, number, number] | null
   resetKey: number
-  durationSeconds?: number
 }) {
   const targetRef = useRef<THREE.Vector3 | null>(null)
   const progressRef = useRef(0)
@@ -700,7 +621,7 @@ function CameraFocus({
     const controls = controlsRef.current
     const camera = state.camera
     // Ease progress
-    const speed = Math.max(0.2, durationSeconds)
+    const speed = 1.5 // seconds to focus
     progressRef.current = Math.min(1, progressRef.current + delta / speed)
     const t = 1 - Math.pow(1 - progressRef.current, 3) // cubic ease-out
 
