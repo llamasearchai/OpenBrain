@@ -3,6 +3,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/llamasearchai/OpenBrain/actions/workflows/ci.yml">
+    <img src="https://github.com/llamasearchai/OpenBrain/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  </a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+" />
   <img src="https://img.shields.io/badge/node-20.x-brightgreen" alt="Node 20" />
   <img src="https://img.shields.io/badge/docker-compose-blue" alt="Docker Compose" />
